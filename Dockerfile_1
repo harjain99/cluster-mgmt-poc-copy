@@ -1,0 +1,5 @@
+FROM arm64v8/ubuntu:22.04
+WORKDIR /app
+COPY build/cluster-mgmt-poc-1.0.0-SNAPSHOT-runner ./app
+RUN chmod +x ./app
+CMD ["./app"]

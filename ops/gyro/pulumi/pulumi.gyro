@@ -1,0 +1,5 @@
+aws::pulumi pulumi-example
+    stack-name: "brightspot-poc/bnxt-poc/bnxt-poc"
+    relative-path: "pulumi"
+    config: "Pulumi.yaml"
+end

@@ -1,0 +1,25 @@
+@highlander: true
+@repository: 'https://artifactory.psdops.com/public'
+@repository: 'https://artifactory.psdops.com/gyro-snapshots'
+@plugin: 'gyro:gyro-aws-provider:1.9.0-SNAPSHOT'
+@plugin: 'gyro:gyro-brightspot-cloud-plugin:1.7.0-SNAPSHOT'
+#@plugin: 'gyro:gyro-ssh-plugin:1.0.0'
+
+project: "gyro-sandbox"
+account: "psd-beam-sandbox"
+environment: "sandbox"
+
+@credentials 'enterprise::aws-credentials'
+    enterprise-url: "https://beam-enterprise.psdops.com"
+    project: $(project)
+    account: $(account)
+    profile-name: $(account)
+    region: "us-east-1"
+@end
+
+@audit::auditor 'enterprise::beam-auditor'
+    enterprise-url: "https://beam-enterprise.psdops.com"
+    project: $project
+    serial: "1"
+    account: $account
+@end

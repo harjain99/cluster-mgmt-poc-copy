@@ -1,0 +1,212 @@
+name: bnxt-poc
+runtime: yaml
+description: A simple ecs fargate infra using AWSX
+packages:
+  python-components: ../components@0.0.0
+  aws: "7.6.0"
+resources:
+  repo:
+    type: awsx:ecr:Repository
+    properties:
+      name: bnxt-poc/repo
+      forceDelete: true
+      imageScanningConfiguration:
+        scanOnPush: false
+  service:
+    type: awsx:ecs:FargateService
+    properties:
+      name: service
+      cluster: ${cluster.arn}
+      assignPublicIp: true
+      healthCheckGracePeriodSeconds: 500
+      enableExecuteCommand: true
+      forceNewDeployment: false
+      taskDefinitionArgs:
+        family: bridgenext-stack-public
+        cpu: 4096
+        memory: 24576
+        ephemeralStorage:
+          sizeInGib: 100
+        taskRole:
+          roleArn: ${taskRole.arn}
+        volumes:
+          - name: storage-data
+          - name: solr-data
+          - name: mysql-data
+          - name: mysql-logs
+            #        runtimePlatform:
+            #          cpuArchitecture: "ARM64"
+            #          operatingSystemFamily: "LINUX"
+        containers:
+          tomcat:
+            name: tomcat
+            image: 242040583208.dkr.ecr.us-east-1.amazonaws.com/bnxt-poc/repo:tomcat-latest
+            essential: true
+            portMappings:
+              - containerPort: 8080
+                hostPort: 8080
+                protocol: tcp
+            environment:
+              - name: MYSQL_HOST
+                value: localhost
+              - name: MYSQL_PORT
+                value: "3306"
+              - name: SOLR_HOST
+                value: localhost
+              - name: SOLR_PORT
+                value: "8081"
+              - name: JAVA_TOOL_OPTIONS
+                value: "-Xms1024m -Xmx4096m -XX:+UseContainerSupport"
+              - name: APACHE_HOST
+                value: localhost
+              - name: SOLR_URL
+                value: http://localhost:8081/solr/collection1
+            dependsOn:
+              - containerName: mysql
+                condition: START
+              - containerName: apache
+                condition: START
+            mountPoints:
+              - sourceVolume: storage-data
+                containerPath: /servers/tomcat/storage
+            logConfiguration:
+              logDriver: awslogs
+              options:
+                awslogs-group: /ecs/bridgenext-stack-public
+                awslogs-region: us-east-1
+                awslogs-stream-prefix: tomcat
+          solr:
+            name: solr
+            image: brightspot/solr:8.11
+            essential: true
+            portMappings:
+              - containerPort: 8081
+                protocol: tcp
+            environment:
+              - name: SOLR_OPTS
+                value: "-Djetty.port=8081 -Dsolr.dns.prevent.reverse.lookup=true -XX:+UseContainerSupport -XX:MaxRAMPercentage=75.0 -XX:+UseG1GC -XX:InitiatingHeapOccupancyPercent=30 -XX:+ExplicitGCInvokesConcurrent"
+              - name: SOLR_HEAP
+                value: 4g
+              - name: SOLR_CONFIG
+                value: dari-solr-11
+            mountPoints:
+              - sourceVolume: solr-data
+                containerPath: /var/solr/data/collection1/data
+            logConfiguration:
+              logDriver: awslogs
+              options:
+                awslogs-group: /ecs/bridgenext-stack-public
+                awslogs-region: us-east-1
+                awslogs-stream-prefix: solr
+          apache:
+            name: apache
+            image: 242040583208.dkr.ecr.us-east-1.amazonaws.com/bnxt-poc/repo:apache-latest
+            essential: true
+            environment:
+              - name: TOMCAT_URL
+                value: http://localhost:8080/
+            portMappings:
+              - containerPort: 80
+                hostPort: 80
+                protocol: tcp
+                targetGroup: ${loadbalancer.defaultTargetGroup}
+              - containerPort: 443
+                protocol: tcp
+            mountPoints:
+              - sourceVolume: storage-data
+                containerPath: /var/www/localhost/htdocs/storage
+            logConfiguration:
+              logDriver: awslogs
+              options:
+                awslogs-group: /ecs/bridgenext-stack-public
+                awslogs-region: us-east-1
+                awslogs-stream-prefix: apache
+          mysql:
+            name: mysql
+            image: brightspot/mysql:percona57
+            essential: true
+            environment:
+              - name: MYSQL_ROOT_PASSWORD
+                value: brightspot
+              - name: MYSQL_DATABASE
+                value: brightspot
+              - name: MYSQL_INITDB_SKIP_TZINFO
+                value: "1"
+              - name: TZ
+                value: UTC
+              - name: MYSQL_TCP_PORT
+                value: "3306"
+            portMappings:
+              - containerPort: 3306
+                protocol: tcp
+            logConfiguration:
+              logDriver: awslogs
+              options:
+                awslogs-group: /ecs/bridgenext-stack-public
+                awslogs-region: us-east-1
+                awslogs-stream-prefix: mysql
+                #          greenmail:
+                #            image: greenmail/standalone:1.5.14
+                #            essential: true
+                #            portMappings:
+                #              - containerPort: 3025
+                #                protocol: tcp
+                #              - containerPort: 3110
+                #                protocol: tcp
+                #              - containerPort: 3143
+                #                protocol: tcp
+                #              - containerPort: 3465
+                #                protocol: tcp
+                #              - containerPort: 3993
+                #                protocol: tcp
+                #              - containerPort: 3995
+                #                protocol: tcp
+                #            logConfiguration:
+                #              logDriver: awslogs
+                #              options:
+                #                awslogs-group: /ecs/bridgenext-stack-public
+                #                awslogs-region: us-east-1
+                #                awslogs-stream-prefix: greenmail
+  cluster:
+    type: aws:ecs:Cluster
+    properties:
+      name: cluster
+  loadbalancer:
+    type: awsx:lb:ApplicationLoadBalancer
+    properties:
+      name: loadbalancer
+      defaultTargetGroup:
+        port: 80
+        healthCheck:
+          path: /
+          protocol: HTTP
+          interval: 60
+          timeout: 10
+          healthyThreshold: 2
+          unhealthyThreshold: 5
+  taskRole:
+    type: aws:iam:Role
+    properties:
+      assumeRolePolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service: "ecs-tasks.amazonaws.com"
+            Action: "sts:AssumeRole"
+  taskRolePolicyAttachment:
+    type: aws:iam:RolePolicyAttachment
+    properties:
+      role: ${taskRole.name}
+      policyArn: "arn:aws:iam::aws:policy/AdministratorAccess"
+  my-bucket:
+    type: python-components:MyBucketComponent
+    properties:
+      bucketName: "example-bucket"
+  my-static-page:
+    type: python-components:StaticPage
+    properties:
+      indexContent: "<h1>Hello, World!</h1>"
+outputs:
+  frontendURL: http://${loadbalancer.loadBalancer.dnsName}
+  websiteUrl: ${my-static-page.websiteUrl}
