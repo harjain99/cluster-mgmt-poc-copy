@@ -1,0 +1,4 @@
+packageDeclarationVersion: 1
+name: python-components
+version: 0.1.0
+downloadUrl: git://github.com/harjain99/cluster-mgmt-poc-copy

@@ -2,7 +2,7 @@ name: bnxt-poc
 runtime: yaml
 description: A simple ecs fargate infra using AWSX
 packages:
-  python-components: ../components@0.0.0
+  python-components: https://github.com/harjain99/cluster-mgmt-poc-copy@0.1.0
   aws: "7.6.0"
 resources:
   repo:
